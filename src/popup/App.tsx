@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [showToasts, setShowToasts] = useState(true);
   const [skipPasswords, setSkipPasswords] = useState(true);
   const [excludedHosts, setExcludedHosts] = useState('');
+  const [popupShortcut, setPopupShortcut] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
@@ -149,18 +150,28 @@ const App: React.FC = () => {
   }, [editingNoteId]);
 
   useEffect(() => {
+    if (!chrome.commands?.getAll) {
+      return;
+    }
+    chrome.commands.getAll((commands) => {
+      const open = commands.find((command) => command.name === 'open-popup');
+      setPopupShortcut(open?.shortcut || '');
+    });
+  }, [showSettings]);
+
+  useEffect(() => {
     loadItems();
     loadSettings();
-    
+
     const handleStorageChange = () => {
       if (editingNoteIdRef.current) {
         return;
       }
       loadItems();
     };
-    
+
     chrome.storage.onChanged.addListener(handleStorageChange);
-    
+
     return () => {
       chrome.storage.onChanged.removeListener(handleStorageChange);
     };
@@ -654,7 +665,7 @@ const App: React.FC = () => {
               : ''}
           </span>
           <div className="flex items-center gap-2.5">
-            <span className={theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}>v1.1.0</span>
+            <span className={theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}>v1.1.1</span>
             <a
               href="#"
               className={`transition-colors flex items-center gap-1 ${theme === 'dark' ? 'text-gray-400 hover:text-pink-500' : 'text-gray-500 hover:text-pink-600'}`}
@@ -850,8 +861,29 @@ const App: React.FC = () => {
               <div className="mb-6">
                 <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>Keyboard shortcut</h3>
                 <p className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Default: Alt+Shift+V. Change it in chrome://extensions/shortcuts
+                  {popupShortcut
+                    ? `Current: ${popupShortcut}`
+                    : 'Not assigned. Windows uses Alt+Shift to switch keyboard layout, so that combo is not used.'}
                 </p>
+                <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Suggested: Ctrl+Shift+Y
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = /Vivaldi/i.test(navigator.userAgent)
+                      ? 'vivaldi://extensions/shortcuts'
+                      : 'chrome://extensions/shortcuts';
+                    chrome.tabs.create({ url });
+                  }}
+                  className={`mt-2 px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                    theme === 'dark'
+                      ? 'text-gray-100 bg-gray-700 hover:bg-gray-600'
+                      : 'text-gray-800 bg-gray-200 hover:bg-gray-300'
+                  }`}
+                >
+                  Assign shortcut
+                </button>
               </div>
 
               <div className={`border-t my-6 ${theme === 'dark' ? 'border-gray-700' : 'border-gray-300'}`} />
@@ -877,7 +909,7 @@ const App: React.FC = () => {
                 <div className={`space-y-2 text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
                   <div className="flex items-center justify-between">
                     <span className={theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}>Version</span>
-                    <span className={theme === 'dark' ? 'text-white font-medium' : 'text-gray-900 font-medium'}>v1.1.0</span>
+                    <span className={theme === 'dark' ? 'text-white font-medium' : 'text-gray-900 font-medium'}>v1.1.1</span>
                   </div>
                   <div className="flex items-center gap-2 mt-4 flex-wrap">
                     <a

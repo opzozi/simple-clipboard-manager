@@ -139,6 +139,31 @@ chrome.runtime.onInstalled.addListener(() => {
 
 runMigrations();
 
+async function openHistoryPopup() {
+  try {
+    if (chrome.action.openPopup) {
+      await chrome.action.openPopup();
+      return;
+    }
+  } catch {
+    // Some Chromium forks reject openPopup; fall through to a window.
+  }
+
+  await chrome.windows.create({
+    url: chrome.runtime.getURL('popup.html'),
+    type: 'popup',
+    width: 480,
+    height: 620,
+    focused: true
+  });
+}
+
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'open-popup') {
+    void openHistoryPopup();
+  }
+});
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'save-selection' && info.selectionText) {
     const result = await saveClipboardItem(info.selectionText);

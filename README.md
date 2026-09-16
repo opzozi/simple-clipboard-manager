@@ -71,6 +71,8 @@ npm run build
 
 Chrome or Vivaldi → `chrome://extensions/` → Developer mode → Load unpacked → select the `dist` folder. `npm run dev` rebuilds on change.
 
+`npm run package` writes a Store-ready zip to `releases/simple-clipboard-manager-<version>.zip`.
+
 Store listing copy (short + long text to paste): [CHROME_WEB_STORE.md](CHROME_WEB_STORE.md).
 
 ## Later: Pro, still offline

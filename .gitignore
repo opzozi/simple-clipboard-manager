@@ -32,8 +32,8 @@ Desktop.ini
 *.swo
 *~
 
-# Packaged extension
-*.zip
+# Packaged zips in the repo root. Versioned builds live in releases/.
+/*.zip
 
 # Temporary files
 *.tmp

@@ -1,14 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Simple Clipboard Manager - Private & Offline",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Free clipboard manager with 100 items history, smart type detection, keyboard navigation, dark/light themes. 100% offline, private, no tracking. Open source.",
   "permissions": [
     "storage",
     "clipboardRead",
     "clipboardWrite",
-    "contextMenus",
-    "tabs"
+    "contextMenus"
   ],
   "background": {
     "service_worker": "background.js"

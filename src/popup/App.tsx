@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { getClipboardHistory, getStorageData, deleteClipboardItem, copyToClipboard, clearClipboardHistory, toggleStarredItem, getSettings, saveSettings, type Settings } from '../utils/storage';
+import { getStorageData, deleteClipboardItem, copyToClipboard, clearClipboardHistory, toggleStarredItem, getSettings, saveSettings, type Settings } from '../utils/storage';
 import { detectItemType, colorCodeToCssColor, type ItemType } from '../utils/itemType';
 import type { ClipboardItem } from '../types';
 
-type ActiveTab = 'recent' | 'pinned' | 'categories';
+type ActiveTab = 'recent' | 'pinned';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<ClipboardItem[]>([]);
@@ -23,27 +23,18 @@ const App: React.FC = () => {
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const { starredItems, recentItems, displayedItems } = useMemo(() => {
-    let filtered = items.filter(item => 
+  const displayedItems = useMemo(() => {
+    const filtered = items.filter(item =>
       item.text.toLowerCase().includes(searchQuery.toLowerCase())
     );
-    
-    const starred = filtered.filter(item => item.isStarred);
-    const recent = filtered.filter(item => !item.isStarred);
-    
-    starred.sort((a, b) => b.timestamp - a.timestamp);
-    recent.sort((a, b) => b.timestamp - a.timestamp);
-    
-    let displayed: ClipboardItem[] = [];
+
+    const starred = filtered.filter(item => item.isStarred).sort((a, b) => b.timestamp - a.timestamp);
+    const recent = filtered.filter(item => !item.isStarred).sort((a, b) => b.timestamp - a.timestamp);
+
     if (activeTab === 'pinned') {
-      displayed = starred;
-    } else if (activeTab === 'recent') {
-      displayed = recent;
-    } else {
-      displayed = filtered.sort((a, b) => b.timestamp - a.timestamp);
+      return starred;
     }
-    
-    return { starredItems: starred, recentItems: recent, displayedItems: displayed };
+    return recent;
   }, [items, searchQuery, activeTab]);
 
   const handleCopy = useCallback(async (item: ClipboardItem) => {
@@ -90,7 +81,6 @@ const App: React.FC = () => {
     setAutoSave(newSettings.autoSave);
     setShowToasts(newSettings.showToasts);
     setTheme(newSettings.theme || 'dark');
-    // Apply theme to root element
     document.documentElement.classList.toggle('light-theme', newSettings.theme === 'light');
     document.documentElement.classList.toggle('dark-theme', newSettings.theme === 'dark');
   };
@@ -115,12 +105,9 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't handle keyboard navigation if search input is focused
       if (document.activeElement === searchInputRef.current) {
-        // Allow Escape to clear search and focus list
         if (e.key === 'Escape') {
           setSearchQuery('');
           setSelectedIndex(0);
@@ -130,7 +117,6 @@ const App: React.FC = () => {
         return;
       }
 
-      // Don't handle if modal is open
       if (showConfirm || showProModal || showSettings) return;
 
       const filteredCount = displayedItems.length;
@@ -140,7 +126,6 @@ const App: React.FC = () => {
         e.preventDefault();
         setSelectedIndex(prev => {
           const next = prev < filteredCount - 1 ? prev + 1 : 0;
-          // Scroll into view
           setTimeout(() => {
             itemRefs.current[next]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }, 0);
@@ -150,7 +135,6 @@ const App: React.FC = () => {
         e.preventDefault();
         setSelectedIndex(prev => {
           const next = prev > 0 ? prev - 1 : filteredCount - 1;
-          // Scroll into view
           setTimeout(() => {
             itemRefs.current[next]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }, 0);
@@ -170,13 +154,11 @@ const App: React.FC = () => {
     };
   }, [displayedItems, selectedIndex, showConfirm, showProModal, showSettings, handleCopy]);
 
-  // Reset selected index when filtered items change
   useEffect(() => {
     const totalItems = displayedItems.length;
     if (totalItems > 0 && selectedIndex >= totalItems) {
       setSelectedIndex(0);
     } else if (totalItems > 0 && selectedIndex === -1) {
-      // Auto-select first item when items load
       setSelectedIndex(0);
     }
   }, [displayedItems.length, selectedIndex]);
@@ -219,7 +201,6 @@ const App: React.FC = () => {
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
 
-    // If older than 7 days, show date
     if (days >= 7) {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -238,7 +219,7 @@ const App: React.FC = () => {
     return text.substring(0, maxLength) + '...';
   };
 
-  const getItemIcon = (itemType: ItemType, itemText: string, currentTheme: 'dark' | 'light' = theme) => {
+  const getItemIcon = (itemType: ItemType, itemText: string) => {
     switch (itemType) {
       case 'link':
         return (
@@ -246,8 +227,7 @@ const App: React.FC = () => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
           </svg>
         );
-      case 'color':
-        // Visual color: show a colored circle with the actual color
+      case 'color': {
         const cssColor = colorCodeToCssColor(itemText);
         return (
           <div 
@@ -256,6 +236,7 @@ const App: React.FC = () => {
             title={itemText}
           />
         );
+      }
       case 'text':
       default:
         return (
@@ -347,28 +328,29 @@ const App: React.FC = () => {
             className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all relative group ${
               activeTab === 'pinned'
                 ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                : theme === 'dark'
+                  ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
             }`}
-            title="Starred Items"
+            title="Pinned items"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
             </svg>
           </button>
 
-          {/* Categories Button (PRO - Disabled) */}
           <button
-            onClick={() => {
-              setShowProModal(true);
-            }}
-            className="w-12 h-12 rounded-lg flex items-center justify-center transition-all relative group opacity-50 cursor-not-allowed"
-            title="Categories (PRO Feature)"
-            disabled
+            onClick={() => setShowProModal(true)}
+            className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all relative group ${
+              theme === 'dark'
+                ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+            }`}
+            title="Categories (PRO feature)"
           >
             <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
-            {/* Small lock icon */}
             <svg className="w-3 h-3 absolute bottom-1 right-1 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
             </svg>
@@ -408,7 +390,7 @@ const App: React.FC = () => {
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
-                    setSelectedIndex(-1); // Reset selection when searching
+                    setSelectedIndex(-1);
                   }}
                   placeholder="Search clipboard history..."
                   className={`w-full rounded-lg px-3 py-2 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
@@ -488,7 +470,7 @@ const App: React.FC = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2">
                         <div className="mt-0.5">
-                          {getItemIcon(detectItemType(item.text), item.text, theme)}
+                          {getItemIcon(detectItemType(item.text), item.text)}
                         </div>
                         <p className={`text-sm break-words leading-relaxed flex-1 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>
                           {truncateText(item.text)}
@@ -532,7 +514,7 @@ const App: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    {/* Star button - always visible, fixed position */}
+                    {/* Star button */}
                     <div className="flex items-center flex-shrink-0">
                       <button
                         onClick={(e) => handleToggleStar(item.id, e)}
@@ -571,7 +553,7 @@ const App: React.FC = () => {
               : ''}
           </span>
           <div className="flex items-center gap-2.5">
-            <span className={theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}>v1.0.0</span>
+            <span className={theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}>v1.0.1</span>
             <a
               href="#"
               className={`transition-colors flex items-center gap-1 ${theme === 'dark' ? 'text-gray-400 hover:text-pink-500' : 'text-gray-500 hover:text-pink-600'}`}
@@ -627,7 +609,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Toast notification - Copied from popup */}
+      {/* Toast */}
       {showToast && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[100] pointer-events-none">
           <div className="bg-green-600 text-white px-4 py-2.5 rounded-lg shadow-2xl flex items-center gap-2 min-w-[200px] animate-[slideDown_0.3s_ease-out] border border-green-500">
@@ -650,7 +632,11 @@ const App: React.FC = () => {
             <div className="flex justify-end gap-2 mt-5">
               <button
                 onClick={cancelClear}
-                className="px-4 py-2 text-xs font-medium text-gray-300 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
+                className={`px-4 py-2 text-xs font-medium rounded transition-colors ${
+                  theme === 'dark'
+                    ? 'text-gray-300 bg-gray-700 hover:bg-gray-600'
+                    : 'text-gray-700 bg-gray-200 hover:bg-gray-300'
+                }`}
               >
                 Cancel
               </button>
@@ -756,7 +742,7 @@ const App: React.FC = () => {
                 <div className={`space-y-2 text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
                   <div className="flex items-center justify-between">
                     <span className={theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}>Version</span>
-                    <span className={theme === 'dark' ? 'text-white font-medium' : 'text-gray-900 font-medium'}>v1.0.0</span>
+                    <span className={theme === 'dark' ? 'text-white font-medium' : 'text-gray-900 font-medium'}>v1.0.1</span>
                   </div>
                   <div className="flex items-center gap-2 mt-4 flex-wrap">
                     <a

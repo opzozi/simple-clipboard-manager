@@ -1,32 +1,43 @@
-// Content script: Clipboard monitoring
-
-let lastClipboardText = '';
+let lastToastTime = 0;
 
 async function getSettings(): Promise<{ autoSave: boolean; showToasts: boolean }> {
   try {
     const result = await chrome.storage.local.get('clipboard_settings');
-    const settings = result.clipboard_settings || { autoSave: true, showToasts: true };
-    return settings;
-  } catch (error) {
-    console.debug('Error getting settings:', error);
+    return result.clipboard_settings || { autoSave: true, showToasts: true };
+  } catch {
     return { autoSave: true, showToasts: true };
   }
 }
 
-async function showToast(message: string) {
-  const settings = await getSettings();
-  if (!settings.showToasts) {
+function ensureToastStyles() {
+  if (document.getElementById('clipboard-manager-toast-styles') || !document.head) {
     return;
   }
 
-  const existingToast = document.getElementById('clipboard-manager-toast');
-  if (existingToast) {
-    existingToast.remove();
-  }
-  
-  if (!document.body) {
+  const style = document.createElement('style');
+  style.id = 'clipboard-manager-toast-styles';
+  style.textContent = `
+    @keyframes slideInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideOutDown {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(20px); }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+async function showToast(message: string) {
+  const settings = await getSettings();
+  if (!settings.showToasts || !document.body) {
     return;
   }
+
+  ensureToastStyles();
+  document.getElementById('clipboard-manager-toast')?.remove();
+
   const toast = document.createElement('div');
   toast.id = 'clipboard-manager-toast';
   toast.style.cssText = `
@@ -38,11 +49,11 @@ async function showToast(message: string) {
     padding: 12px 16px;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 10000;
+    z-index: 2147483647;
     display: flex;
     align-items: center;
     gap: 8px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 14px;
     font-weight: 500;
     animation: slideInUp 0.3s ease-out;
@@ -55,7 +66,7 @@ async function showToast(message: string) {
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
     </svg>
   `;
-  icon.style.cssText = 'flex-shrink: 0;';
+  icon.style.flexShrink = '0';
 
   const messageEl = document.createElement('span');
   messageEl.textContent = message;
@@ -66,123 +77,86 @@ async function showToast(message: string) {
 
   setTimeout(() => {
     toast.style.animation = 'slideOutDown 0.3s ease-out';
-    setTimeout(() => {
-      if (toast.parentNode) {
-        toast.remove();
-      }
-    }, 300);
+    setTimeout(() => toast.remove(), 300);
   }, 2500);
-}
-
-if (!document.getElementById('clipboard-manager-toast-styles')) {
-  const style = document.createElement('style');
-  style.id = 'clipboard-manager-toast-styles';
-  style.textContent = `
-    @keyframes slideInUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    @keyframes slideOutDown {
-      from {
-        opacity: 1;
-        transform: translateY(0);
-      }
-      to {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-    }
-  `;
-  document.head.appendChild(style);
 }
 
 function isExtensionContextValid(): boolean {
   try {
-    return typeof chrome !== 'undefined' && 
-           typeof chrome.runtime !== 'undefined' && 
-           typeof chrome.runtime.id !== 'undefined';
-  } catch (error) {
+    return Boolean(chrome?.runtime?.id);
+  } catch {
     return false;
   }
 }
 
-document.addEventListener('copy', async (e) => {
-  const settings = await getSettings();
-  if (!settings.autoSave) {
-    return;
+function getCopiedText(e: ClipboardEvent): string {
+  const fromEvent = e.clipboardData?.getData('text/plain') || '';
+  if (fromEvent.trim()) {
+    return fromEvent;
   }
+
+  const el = document.activeElement;
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    if (end > start) {
+      return el.value.slice(start, end);
+    }
+  }
+
+  return window.getSelection()?.toString() || '';
+}
+
+function maybeShowToast(message: string) {
+  const now = Date.now();
+  if (now - lastToastTime > 500) {
+    showToast(message);
+    lastToastTime = now;
+  }
+}
+
+document.addEventListener('copy', (e) => {
+  const immediateText = getCopiedText(e);
 
   setTimeout(async () => {
     if (!isExtensionContextValid()) {
       return;
     }
 
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text && text.trim().length > 0 && text !== lastClipboardText) {
-        if (!isExtensionContextValid()) {
-          return;
-        }
+    const settings = await getSettings();
+    if (!settings.autoSave) {
+      return;
+    }
 
-        chrome.runtime.sendMessage({
-          type: 'SAVE_CLIPBOARD',
-          text: text
-        }, (response) => {
-          if (chrome.runtime.lastError) {
-            if (chrome.runtime.lastError.message?.includes('Extension context invalidated')) {
-              return;
-            }
-            return;
-          }
-          if (response && response.success) {
-            const now = Date.now();
-            if (now - lastToastTime > 500) {
-              if (response.isDuplicate) {
-                showToast('Already in history');
-              } else {
-                showToast('Added to clipboard history');
-              }
-              lastToastTime = now;
-            }
-          }
-        });
-        lastClipboardText = text;
-      }
-    } catch (error: any) {
-      if (error?.message?.includes('Extension context invalidated')) {
+    let text = immediateText;
+    if (!text.trim()) {
+      try {
+        text = await navigator.clipboard.readText();
+      } catch {
         return;
       }
     }
+
+    if (!text.trim()) {
+      return;
+    }
+
+    chrome.runtime.sendMessage({ type: 'SAVE_CLIPBOARD', text }, () => {
+      void chrome.runtime.lastError;
+    });
   }, 100);
 });
 
-let lastToastTime = 0;
-let lastToastText = '';
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!isExtensionContextValid()) {
+  if (!isExtensionContextValid() || !sender) {
     return false;
   }
 
   if (message.type === 'CLIPBOARD_SAVED') {
-    const now = Date.now();
-    if (now - lastToastTime > 500) {
-      showToast('Added to clipboard history');
-      lastToastTime = now;
-    }
+    maybeShowToast('Added to clipboard history');
     sendResponse({ success: true });
   } else if (message.type === 'CLIPBOARD_UPDATED') {
-    const now = Date.now();
-    if (now - lastToastTime > 500) {
-      showToast('Already in history');
-      lastToastTime = now;
-    }
+    maybeShowToast('Already in history');
     sendResponse({ success: true });
   }
   return true;

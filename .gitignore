@@ -32,6 +32,9 @@ Desktop.ini
 *.swo
 *~
 
+# Packaged extension
+*.zip
+
 # Temporary files
 *.tmp
 *.temp

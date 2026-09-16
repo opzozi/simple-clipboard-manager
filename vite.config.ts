@@ -12,7 +12,9 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         { src: 'manifest.json', dest: '.' },
-        { src: 'icons/*', dest: 'icons' }
+        { src: 'icons/icon16.png', dest: 'icons' },
+        { src: 'icons/icon48.png', dest: 'icons' },
+        { src: 'icons/icon128.png', dest: 'icons' }
       ]
     })
   ],
@@ -33,19 +35,10 @@ export default defineConfig({
         },
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: (assetInfo) => {
-          // Move popup HTML to root
           if (assetInfo.name === 'index.html' && assetInfo.source.toString().includes('popup')) {
             return 'popup.html';
           }
           return 'assets/[name]-[hash].[ext]';
-        },
-        // Inline all dynamic imports for background and content
-        inlineDynamicImports: false,
-        manualChunks: (id) => {
-          // Force background and content to bundle all dependencies inline
-          if (id.includes('background') || id.includes('content')) {
-            return null; // Don't create separate chunks
-          }
         }
       }
     }

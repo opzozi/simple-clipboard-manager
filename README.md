@@ -65,8 +65,10 @@ npm run build  # Production build
 │   ├── utils/          # Storage utilities
 │   └── styles/         # CSS/Tailwind
 ├── icons/              # Extension icons
+├── LICENSE             # MIT License
+├── PRIVACY_POLICY.md
 ├── manifest.json       # Chrome extension manifest
-└── vite.config.ts     # Build configuration
+└── vite.config.ts      # Build configuration
 ```
 
 ## Technical Details
@@ -89,7 +91,7 @@ Uses Manifest V3 with minimal permissions for privacy.
 When copying the same text, the item moves to top with updated timestamp. Debounce prevents saving duplicates within 1 second. Works with both Ctrl+C and context menu.
 
 **Storage Limits:**
-Maximum 100 items. When limit is reached, oldest item is automatically removed. Footer shows current count (e.g., "6/100 items").
+Maximum 100 items. When the limit is reached, the oldest unpinned item is removed. Each item is capped at 50,000 characters. The footer shows the current count (e.g., "6/100 items").
 
 **Search:**
 Real-time search appears below header when items exist. React state-based filtering with search icon and clear button. Footer updates to show filtered count (e.g., "3 of 100 items").

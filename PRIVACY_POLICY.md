@@ -1,6 +1,6 @@
 # Privacy Policy for Simple Clipboard Manager
 
-**Last Updated:** January 2026
+**Last Updated:** September 2026
 
 ## Overview
 
@@ -35,7 +35,6 @@ The extension requires the following permissions:
 - **clipboardRead**: To read clipboard content during user copy interactions
 - **clipboardWrite**: To copy saved items back to your clipboard when selected
 - **contextMenus**: To add a "Save to Clipboard Manager" option to the right-click menu
-- **tabs**: To send notification messages to content scripts for user feedback
 - **Host permission (<all_urls>)**: To monitor clipboard copy events on all websites
 
 These permissions are used solely for the extension's core functionality and are not used to collect or transmit any data.

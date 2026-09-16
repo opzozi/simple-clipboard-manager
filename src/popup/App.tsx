@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { getStorageData, deleteClipboardItem, copyToClipboard, clearClipboardHistory, toggleStarredItem, getSettings, saveSettings, type Settings } from '../utils/storage';
+import { getStorageData, deleteClipboardItem, copyToClipboard, clearClipboardHistory, toggleStarredItem, getSettings, saveSettings, updateItemNote, MAX_NOTE_LENGTH, type Settings } from '../utils/storage';
 import { detectItemType, colorCodeToCssColor, type ItemType } from '../utils/itemType';
 import type { ClipboardItem } from '../types';
 
@@ -7,7 +7,7 @@ type ActiveTab = 'recent' | 'pinned';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<ClipboardItem[]>([]);
-  const [maxItems, setMaxItems] = useState(100);
+  const [maxItems, setMaxItems] = useState(500);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -16,16 +16,25 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [autoSave, setAutoSave] = useState(true);
   const [showToasts, setShowToasts] = useState(true);
+  const [skipPasswords, setSkipPasswords] = useState(true);
+  const [excludedHosts, setExcludedHosts] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [activeTab, setActiveTab] = useState<ActiveTab>('recent');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const noteInputRef = useRef<HTMLInputElement>(null);
+  const editingNoteIdRef = useRef<string | null>(null);
+  const skipNoteSaveRef = useRef(false);
 
   const displayedItems = useMemo(() => {
-    const filtered = items.filter(item =>
-      item.text.toLowerCase().includes(searchQuery.toLowerCase())
+    const query = searchQuery.toLowerCase();
+    const filtered = items.filter((item) =>
+      item.text.toLowerCase().includes(query)
+      || (item.note || '').toLowerCase().includes(query)
     );
 
     const starred = filtered.filter(item => item.isStarred).sort((a, b) => b.timestamp - a.timestamp);
@@ -68,6 +77,8 @@ const App: React.FC = () => {
       const settings = await getSettings();
       setAutoSave(settings.autoSave);
       setShowToasts(settings.showToasts);
+      setSkipPasswords(settings.skipPasswords);
+      setExcludedHosts(settings.excludedHosts || '');
       setTheme(settings.theme || 'dark');
       document.documentElement.classList.toggle('light-theme', settings.theme === 'light');
       document.documentElement.classList.toggle('dark-theme', settings.theme === 'dark');
@@ -80,21 +91,71 @@ const App: React.FC = () => {
     await saveSettings(newSettings);
     setAutoSave(newSettings.autoSave);
     setShowToasts(newSettings.showToasts);
+    setSkipPasswords(newSettings.skipPasswords);
+    setExcludedHosts(newSettings.excludedHosts);
     setTheme(newSettings.theme || 'dark');
     document.documentElement.classList.toggle('light-theme', newSettings.theme === 'light');
     document.documentElement.classList.toggle('dark-theme', newSettings.theme === 'dark');
   };
 
+  const persistSettings = (patch: Partial<Settings>) => {
+    return handleSaveSettings({
+      autoSave,
+      showToasts,
+      theme,
+      skipPasswords,
+      excludedHosts,
+      ...patch,
+    });
+  };
+
   const handleToggleTheme = async () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
-    await handleSaveSettings({ autoSave, showToasts, theme: newTheme });
+    await persistSettings({ theme: newTheme });
   };
+
+  const startEditNote = (item: ClipboardItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (editingNoteId && editingNoteId !== item.id) {
+      updateItemNote(editingNoteId, noteDraft);
+    }
+    skipNoteSaveRef.current = false;
+    setEditingNoteId(item.id);
+    setNoteDraft(item.note || '');
+    setTimeout(() => noteInputRef.current?.focus(), 0);
+  };
+
+  const saveNote = async () => {
+    if (skipNoteSaveRef.current) {
+      skipNoteSaveRef.current = false;
+      return;
+    }
+    if (!editingNoteId) {
+      return;
+    }
+    const id = editingNoteId;
+    setEditingNoteId(null);
+    await updateItemNote(id, noteDraft);
+  };
+
+  const cancelNote = () => {
+    skipNoteSaveRef.current = true;
+    setEditingNoteId(null);
+    setNoteDraft('');
+  };
+
+  useEffect(() => {
+    editingNoteIdRef.current = editingNoteId;
+  }, [editingNoteId]);
 
   useEffect(() => {
     loadItems();
     loadSettings();
     
     const handleStorageChange = () => {
+      if (editingNoteIdRef.current) {
+        return;
+      }
       loadItems();
     };
     
@@ -114,6 +175,10 @@ const App: React.FC = () => {
           searchInputRef.current?.blur();
           e.preventDefault();
         }
+        return;
+      }
+
+      if (document.activeElement === noteInputRef.current || editingNoteId) {
         return;
       }
 
@@ -152,7 +217,7 @@ const App: React.FC = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [displayedItems, selectedIndex, showConfirm, showProModal, showSettings, handleCopy]);
+  }, [displayedItems, selectedIndex, showConfirm, showProModal, showSettings, handleCopy, editingNoteId]);
 
   useEffect(() => {
     const totalItems = displayedItems.length;
@@ -249,7 +314,6 @@ const App: React.FC = () => {
 
   return (
     <div className={`flex flex-col relative ${theme === 'dark' ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`} style={{ minHeight: '500px', maxHeight: '600px', minWidth: '464px', width: '464px' }}>
-      {/* Header */}
       <div className={`${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b px-4 py-3`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -264,7 +328,6 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Theme Toggle */}
             <button
               onClick={handleToggleTheme}
               className={`${theme === 'dark' ? 'text-gray-400 hover:text-yellow-400' : 'text-gray-600 hover:text-yellow-600'} p-1.5 rounded transition-colors`}
@@ -295,11 +358,8 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Layout: Sidebar + Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
         <div className={`w-16 border-r flex flex-col items-center py-3 gap-2 ${theme === 'dark' ? 'bg-slate-950 border-gray-800' : 'bg-gray-100 border-gray-300'}`}>
-          {/* Recent Button */}
           <button
             onClick={() => {
               setActiveTab('recent');
@@ -319,7 +379,6 @@ const App: React.FC = () => {
             </svg>
           </button>
 
-          {/* Pinned Button */}
           <button
             onClick={() => {
               setActiveTab('pinned');
@@ -356,10 +415,8 @@ const App: React.FC = () => {
             </svg>
           </button>
 
-          {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Settings Button */}
           <button
             onClick={() => setShowSettings(true)}
             className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all ${
@@ -378,9 +435,7 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        {/* Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Search Bar */}
           {items.length > 0 && (
             <div className={`px-4 py-2 border-b ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
               <div className="relative">
@@ -392,7 +447,7 @@ const App: React.FC = () => {
                     setSearchQuery(e.target.value);
                     setSelectedIndex(-1);
                   }}
-                  placeholder="Search clipboard history..."
+                  placeholder="Search text or notes..."
                   className={`w-full rounded-lg px-3 py-2 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                     theme === 'dark'
                       ? 'bg-gray-700 border border-gray-600 text-gray-100 placeholder-gray-400'
@@ -423,7 +478,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* Content List */}
           <div className={`flex-1 overflow-y-auto ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'}`}>
         {loading ? (
           <div className="flex items-center justify-center h-64">
@@ -455,6 +509,9 @@ const App: React.FC = () => {
                   key={item.id}
                   ref={(el) => { itemRefs.current[index] = el; }}
                   onClick={() => {
+                    if (editingNoteId === item.id) {
+                      return;
+                    }
                     setSelectedIndex(index);
                     handleCopy(item);
                   }}
@@ -476,6 +533,37 @@ const App: React.FC = () => {
                           {truncateText(item.text)}
                         </p>
                       </div>
+                      {editingNoteId === item.id ? (
+                        <input
+                          ref={noteInputRef}
+                          type="text"
+                          value={noteDraft}
+                          maxLength={MAX_NOTE_LENGTH}
+                          placeholder="Note, e.g. temporary login code"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setNoteDraft(e.target.value)}
+                          onBlur={saveNote}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              saveNote();
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              cancelNote();
+                            }
+                          }}
+                          className={`mt-2 w-full rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            theme === 'dark'
+                              ? 'bg-gray-700 border border-gray-600 text-gray-100 placeholder-gray-400'
+                              : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500'
+                          }`}
+                        />
+                      ) : item.note ? (
+                        <p className={`mt-1.5 text-xs italic break-words ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>
+                          {item.note}
+                        </p>
+                      ) : null}
                       <div className="flex items-center justify-between gap-2 mt-2">
                         <div className="flex items-center gap-2">
                           <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
@@ -514,8 +602,22 @@ const App: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    {/* Star button */}
-                    <div className="flex items-center flex-shrink-0">
+                    <div className="flex flex-col items-center flex-shrink-0 gap-0.5">
+                      <button
+                        onClick={(e) => startEditNote(item, e)}
+                        className={`p-1.5 rounded transition-all ${
+                          item.note
+                            ? 'text-blue-400 hover:text-blue-300'
+                            : theme === 'dark'
+                              ? 'text-gray-500 hover:text-blue-400 opacity-60 hover:opacity-100'
+                              : 'text-gray-400 hover:text-blue-600 opacity-60 hover:opacity-100'
+                        }`}
+                        title={item.note ? 'Edit note' : 'Add note'}
+                      >
+                        <svg className="w-4 h-4" fill={item.note ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                        </svg>
+                      </button>
                       <button
                         onClick={(e) => handleToggleStar(item.id, e)}
                         className={`p-1.5 rounded transition-all ${
@@ -542,7 +644,6 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Footer */}
       <div className={`border-t px-4 py-2.5 ${theme === 'dark' ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
         <div className="flex items-center justify-between text-xs">
           <span className={theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}>
@@ -553,7 +654,7 @@ const App: React.FC = () => {
               : ''}
           </span>
           <div className="flex items-center gap-2.5">
-            <span className={theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}>v1.0.1</span>
+            <span className={theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}>v1.1.0</span>
             <a
               href="#"
               className={`transition-colors flex items-center gap-1 ${theme === 'dark' ? 'text-gray-400 hover:text-pink-500' : 'text-gray-500 hover:text-pink-600'}`}
@@ -609,7 +710,6 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Toast */}
       {showToast && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[100] pointer-events-none">
           <div className="bg-green-600 text-white px-4 py-2.5 rounded-lg shadow-2xl flex items-center gap-2 min-w-[200px] animate-[slideDown_0.3s_ease-out] border border-green-500">
@@ -621,7 +721,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Confirm modal */}
       {showConfirm && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
           <div className={`border-2 rounded-lg shadow-2xl w-[320px] p-5 ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-400 shadow-[0_20px_60px_rgba(0,0,0,0.3)]'}`}>
@@ -651,12 +750,10 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
           <div className={`border-2 rounded-lg shadow-2xl w-[400px] max-h-[600px] overflow-y-auto ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-400 shadow-[0_20px_60px_rgba(0,0,0,0.3)]'}`}>
             <div className="p-6">
-              {/* Header */}
               <div className="flex items-center justify-between mb-6">
                 <h2 className={`text-lg font-semibold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>Settings</h2>
                 <button
@@ -670,7 +767,6 @@ const App: React.FC = () => {
                 </button>
               </div>
 
-              {/* Auto-save Toggle */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
                   <div>
@@ -678,7 +774,7 @@ const App: React.FC = () => {
                     <p className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Automatically save clipboard items when copying</p>
                   </div>
                   <button
-                    onClick={() => handleSaveSettings({ autoSave: !autoSave, showToasts, theme })}
+                    onClick={() => persistSettings({ autoSave: !autoSave })}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                       autoSave ? 'bg-blue-600' : theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'
                     }`}
@@ -692,7 +788,6 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Toast Notifications Toggle */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
                   <div>
@@ -700,7 +795,7 @@ const App: React.FC = () => {
                     <p className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Show notifications when items are saved or copied</p>
                   </div>
                   <button
-                    onClick={() => handleSaveSettings({ autoSave, showToasts: !showToasts, theme })}
+                    onClick={() => persistSettings({ showToasts: !showToasts })}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                       showToasts ? 'bg-blue-600' : theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'
                     }`}
@@ -714,10 +809,52 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Divider */}
-              <div className={`border-t my-6 ${theme === 'dark' ? 'border-gray-700' : 'border-gray-300'}`} />
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>Skip passwords</h3>
+                    <p className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Do not save copies from password fields</p>
+                  </div>
+                  <button
+                    onClick={() => persistSettings({ skipPasswords: !skipPasswords })}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      skipPasswords ? 'bg-blue-600' : theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        skipPasswords ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
 
-              {/* Clear All Data */}
+              <div className="mb-6">
+                <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>Ignored sites</h3>
+                <p className={`text-xs mt-0.5 mb-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>One domain per line. Copies on these sites are not saved.</p>
+                <textarea
+                  value={excludedHosts}
+                  rows={3}
+                  placeholder={'bank.example.com\nmail.google.com'}
+                  onChange={(e) => setExcludedHosts(e.target.value)}
+                  onBlur={() => persistSettings({ excludedHosts })}
+                  className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 border border-gray-600 text-gray-100 placeholder-gray-400'
+                      : 'bg-white border border-gray-300 text-gray-900 placeholder-gray-500'
+                  }`}
+                />
+              </div>
+
+              <div className="mb-6">
+                <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>Keyboard shortcut</h3>
+                <p className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Default: Alt+Shift+V. Change it in chrome://extensions/shortcuts
+                </p>
+              </div>
+
+              <div className={`border-t my-6 ${theme === 'dark' ? 'border-gray-700' : 'border-gray-300'}`} />
               <div className="mb-6">
                 <h3 className={`text-sm font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Data</h3>
                 <button
@@ -733,16 +870,14 @@ const App: React.FC = () => {
                 </button>
               </div>
 
-              {/* Divider */}
               <div className={`border-t my-6 ${theme === 'dark' ? 'border-gray-700' : 'border-gray-300'}`} />
 
-              {/* About */}
               <div>
                 <h3 className={`text-sm font-semibold mb-3 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>About</h3>
                 <div className={`space-y-2 text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
                   <div className="flex items-center justify-between">
                     <span className={theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}>Version</span>
-                    <span className={theme === 'dark' ? 'text-white font-medium' : 'text-gray-900 font-medium'}>v1.0.1</span>
+                    <span className={theme === 'dark' ? 'text-white font-medium' : 'text-gray-900 font-medium'}>v1.1.0</span>
                   </div>
                   <div className="flex items-center gap-2 mt-4 flex-wrap">
                     <a
@@ -785,7 +920,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* PRO Modal - Unlimited Pins */}
       {showProModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
           <div className={`border-2 rounded-lg shadow-2xl w-[360px] p-6 ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-400 shadow-[0_20px_60px_rgba(0,0,0,0.3)]'}`}>
@@ -797,15 +931,15 @@ const App: React.FC = () => {
               </div>
               <div>
                 <h2 className={`text-base font-semibold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>Unlock Unlimited Pins</h2>
-                <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Coming Soon</p>
+                <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Local Pro</p>
               </div>
             </div>
             <p className={`text-sm leading-relaxed mb-4 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-              You've reached the free limit of <span className="font-semibold text-blue-400">3 pinned items</span>. 
-              PRO version is coming soon with unlimited pins and more features!
+              You've reached the free limit of <span className="font-semibold text-blue-400">15 pinned items</span>.
+              A local Pro license is planned: expander, encrypted backup, more pins. No cloud.
             </p>
             <div className={`rounded-lg p-3 mb-4 ${theme === 'dark' ? 'bg-gray-700/50' : 'bg-gray-100'}`}>
-              <p className={`text-xs mb-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Planned PRO features:</p>
+              <p className={`text-xs mb-2 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Pro (local):</p>
               <ul className={`text-xs space-y-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
                 <li className="flex items-center gap-2">
                   <svg className="w-3 h-3 text-green-400" fill="currentColor" viewBox="0 0 20 20">
@@ -817,13 +951,19 @@ const App: React.FC = () => {
                   <svg className="w-3 h-3 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  Full history search
+                  Text expander / snippets
                 </li>
                 <li className="flex items-center gap-2">
                   <svg className="w-3 h-3 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                   Encrypted export/import
+                </li>
+                <li className="flex items-center gap-2">
+                  <svg className="w-3 h-3 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Image history
                 </li>
               </ul>
             </div>

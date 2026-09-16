@@ -2,59 +2,28 @@
 
 **Last Updated:** September 2026
 
-## Overview
+Simple Clipboard Manager runs only on your device. It does not collect, transmit, or share clipboard data.
 
-Simple Clipboard Manager is a privacy-focused Chrome extension that operates 100% offline. We do not collect, store, transmit, or share any user data with external servers or third parties.
+## What stays local
 
-## Data Collection
+Chrome `storage.local` holds:
 
-**We do not collect any user data.**
+- Clipboard history (up to 500 items) and optional notes
+- Pins
+- Settings (theme, auto-save, toasts, ignored sites, password skip)
 
-The extension operates entirely locally on your device:
-
-- **No cloud sync**: All clipboard history is stored locally in your browser
-- **No tracking**: No analytics, telemetry, or usage tracking
-- **No external connections**: No API calls to external servers
-- **No data transmission**: Your clipboard data never leaves your device
-
-## Local Storage
-
-The extension uses Chrome's local storage API to store:
-
-- Clipboard history items (up to 100 items)
-- User preferences (theme, auto-save settings, notification preferences)
-- Pinned items
-
-All data is stored locally in your browser and is never transmitted externally. You can clear all data at any time through the extension's settings panel.
+You can delete everything from Settings.
 
 ## Permissions
 
-The extension requires the following permissions:
+- **storage**: local history and settings
+- **clipboardRead**: read text after you copy
+- **clipboardWrite**: copy an item back
+- **contextMenus**: "Save to Clipboard Manager" on selected text
+- **Host access (`<all_urls>`)**: detect copy events on web pages
 
-- **storage**: To save clipboard history locally on your device
-- **clipboardRead**: To read clipboard content during user copy interactions
-- **clipboardWrite**: To copy saved items back to your clipboard when selected
-- **contextMenus**: To add a "Save to Clipboard Manager" option to the right-click menu
-- **Host permission (<all_urls>)**: To monitor clipboard copy events on all websites
-
-These permissions are used solely for the extension's core functionality and are not used to collect or transmit any data.
-
-## Data Security
-
-- All data remains on your device
-- No external servers involved
-- No data sharing with third parties
-- No cookies or tracking technologies
-- Full user control - you can delete all data anytime
-
-## Changes to This Policy
-
-If we make changes to this privacy policy, we will update the "Last Updated" date. Since the extension is open source, you can review the source code to verify our privacy practices.
+These are not used to send data anywhere.
 
 ## Contact
 
-If you have questions about this privacy policy, please open an issue on GitHub: https://github.com/opzozi/simple-clipboard-manager
-
----
-
-**Summary**: This extension is 100% offline, does not collect any user data, and all clipboard history is stored locally on your device only.
+https://github.com/opzozi/simple-clipboard-manager

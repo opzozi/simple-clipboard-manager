@@ -1,10 +1,10 @@
 import type { ClipboardItem, StorageData } from '../types';
 
 const STORAGE_KEY = 'clipboard_history';
-const DEFAULT_MAX_ITEMS = 100;
+const DEFAULT_MAX_ITEMS = 500;
 const MAX_ITEM_LENGTH = 50000;
 const MIGRATION_VERSION_KEY = 'migration_version';
-const CURRENT_MIGRATION_VERSION = 1;
+const CURRENT_MIGRATION_VERSION = 2;
 
 function truncateItemText(text: string): string {
   const trimmed = text.trim();
@@ -21,6 +21,10 @@ async function saveClipboardItem(text: string): Promise<{ saved: boolean; isDupl
 
   const result = await chrome.storage.local.get(STORAGE_KEY);
   const data: StorageData = result[STORAGE_KEY] || { items: [], maxItems: DEFAULT_MAX_ITEMS };
+  if (!data.maxItems || data.maxItems < DEFAULT_MAX_ITEMS) {
+    data.maxItems = DEFAULT_MAX_ITEMS;
+  }
+
   const trimmedText = truncateItemText(text);
   const now = Date.now();
   const existingIndex = data.items.findIndex((item) => item.text === trimmedText);
@@ -102,19 +106,27 @@ function createContextMenu() {
 async function runMigrations() {
   try {
     const migrationData = await chrome.storage.local.get(MIGRATION_VERSION_KEY);
-    const currentVersion = migrationData[MIGRATION_VERSION_KEY] || 0;
+    let currentVersion = migrationData[MIGRATION_VERSION_KEY] || 0;
+    const storageData = await chrome.storage.local.get(STORAGE_KEY);
+    const data = storageData[STORAGE_KEY];
 
-    if (currentVersion < CURRENT_MIGRATION_VERSION) {
-      const storageData = await chrome.storage.local.get(STORAGE_KEY);
-      const data = storageData[STORAGE_KEY];
-
+    if (currentVersion < 1) {
       if (data && data.maxItems && data.maxItems < 100) {
         data.maxItems = 100;
         await chrome.storage.local.set({ [STORAGE_KEY]: data });
       }
-
-      await chrome.storage.local.set({ [MIGRATION_VERSION_KEY]: CURRENT_MIGRATION_VERSION });
+      currentVersion = 1;
     }
+
+    if (currentVersion < 2) {
+      if (data) {
+        data.maxItems = DEFAULT_MAX_ITEMS;
+        await chrome.storage.local.set({ [STORAGE_KEY]: data });
+      }
+      currentVersion = 2;
+    }
+
+    await chrome.storage.local.set({ [MIGRATION_VERSION_KEY]: CURRENT_MIGRATION_VERSION });
   } catch (error) {
     console.error('Error running migrations:', error);
   }
@@ -124,6 +136,8 @@ chrome.runtime.onInstalled.addListener(() => {
   createContextMenu();
   runMigrations();
 });
+
+runMigrations();
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'save-selection' && info.selectionText) {

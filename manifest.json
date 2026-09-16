@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Simple Clipboard Manager - Private & Offline",
-  "version": "1.0.1",
-  "description": "Free clipboard manager with 100 items history, smart type detection, keyboard navigation, dark/light themes. 100% offline, private, no tracking. Open source.",
+  "version": "1.1.0",
+  "description": "Private offline clipboard history. Notes, search, pins, keyboard shortcut. No tracking, no cloud. Open source.",
   "permissions": [
     "storage",
     "clipboardRead",
@@ -32,5 +32,14 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+V",
+        "mac": "Alt+Shift+V"
+      },
+      "description": "Open clipboard history"
+    }
   }
 }

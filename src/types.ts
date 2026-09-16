@@ -3,6 +3,7 @@ export interface ClipboardItem {
   text: string;
   timestamp: number;
   isStarred?: boolean;
+  note?: string;
 }
 
 export interface StorageData {

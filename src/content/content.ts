@@ -1,11 +1,25 @@
 let lastToastTime = 0;
 
-async function getSettings(): Promise<{ autoSave: boolean; showToasts: boolean }> {
+type ContentSettings = {
+  autoSave: boolean;
+  showToasts: boolean;
+  skipPasswords: boolean;
+  excludedHosts: string;
+};
+
+const DEFAULT_CONTENT_SETTINGS: ContentSettings = {
+  autoSave: true,
+  showToasts: true,
+  skipPasswords: true,
+  excludedHosts: '',
+};
+
+async function getSettings(): Promise<ContentSettings> {
   try {
     const result = await chrome.storage.local.get('clipboard_settings');
-    return result.clipboard_settings || { autoSave: true, showToasts: true };
+    return { ...DEFAULT_CONTENT_SETTINGS, ...(result.clipboard_settings || {}) };
   } catch {
-    return { autoSave: true, showToasts: true };
+    return { ...DEFAULT_CONTENT_SETTINGS };
   }
 }
 
@@ -89,6 +103,26 @@ function isExtensionContextValid(): boolean {
   }
 }
 
+function isPasswordField(el: Element | null): boolean {
+  if (!(el instanceof HTMLInputElement)) {
+    return false;
+  }
+  const type = el.type.toLowerCase();
+  const autocomplete = (el.autocomplete || '').toLowerCase();
+  return type === 'password'
+    || autocomplete === 'current-password'
+    || autocomplete === 'new-password';
+}
+
+function isExcludedHost(hostname: string, excludedHosts: string): boolean {
+  const host = hostname.toLowerCase();
+  return excludedHosts
+    .split(/[\n,]/)
+    .map((entry) => entry.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0])
+    .filter(Boolean)
+    .some((pattern) => host === pattern || host.endsWith(`.${pattern}`));
+}
+
 function getCopiedText(e: ClipboardEvent): string {
   const fromEvent = e.clipboardData?.getData('text/plain') || '';
   if (fromEvent.trim()) {
@@ -116,6 +150,7 @@ function maybeShowToast(message: string) {
 }
 
 document.addEventListener('copy', (e) => {
+  const fromPassword = isPasswordField(document.activeElement);
   const immediateText = getCopiedText(e);
 
   setTimeout(async () => {
@@ -125,6 +160,12 @@ document.addEventListener('copy', (e) => {
 
     const settings = await getSettings();
     if (!settings.autoSave) {
+      return;
+    }
+    if (settings.skipPasswords && fromPassword) {
+      return;
+    }
+    if (isExcludedHost(window.location.hostname, settings.excludedHosts)) {
       return;
     }
 
